@@ -994,7 +994,7 @@ export default function AIRiskPredictionPage() {
             />
           </Box>
           <Typography sx={{ fontSize: '0.73rem', color: 'text.secondary', mb: 1.75 }}>
-            Heat intensity shows concentration of High, Medium, and Low risk incidents per street and barangay
+            Street-level risk network plotted over the Biñan 2nd area map — heat intensity shows incident concentration per intersection and landmark
           </Typography>
           <RiskHeatMap />
         </CardContent>

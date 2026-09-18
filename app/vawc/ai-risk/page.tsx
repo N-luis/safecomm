@@ -7,12 +7,23 @@ import {
   Skeleton, LinearProgress,
 } from '@mui/material';
 import {
-  Psychology, Warning, CheckCircle, TrendingUp, FolderOpen,
-  ArrowForward, Shield,
+  Warning, CheckCircle, TrendingUp, FolderOpen,
+  ArrowForward, Shield, LocationOn, ReportProblem,
 } from '@mui/icons-material';
-import { RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Tooltip } from 'recharts';
+import {
+  RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Cell,
+  ResponsiveContainer, Tooltip,
+} from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
+import dynamic from 'next/dynamic';
 import useSWR from 'swr';
+
+const RiskHeatMap = dynamic(() => import('@/components/cases/RiskHeatMap'), { ssr: false });
+
+function scoreColor(score: number) {
+  return score >= 55 ? '#ef4444' : score >= 35 ? '#f97316' : '#22c55e';
+}
 
 const fetcher = (url: string) =>
   fetch(url, { credentials: 'include' }).then(r => r.json().then(d => d.data));
@@ -20,7 +31,15 @@ const fetcher = (url: string) =>
 const ACCENT = '#7c3aed';
 const RISK_COLOR: Record<string, string> = { Critical: '#ef4444', High: '#f97316', Medium: '#f59e0b', Low: '#22c55e' };
 
-interface Stats { total: number; highRisk: number; active: number; resolved: number; }
+interface StreetRow { barangay: string; total: number; highRisk: number; avgScore: number; }
+interface AreaIntervention extends StreetRow { dominantCaseTypes: string[]; }
+interface Stats {
+  total: number; highRisk: number; active: number; resolved: number;
+  summary?: { critical: number; high: number; medium: number; low: number };
+  byStreet?: StreetRow[];
+  areaInterventions?: AreaIntervention[];
+  totalAnalyzed?: number;
+}
 interface TrendRow { month: string; total: number; highRisk: number; }
 interface UrgentCase { id: string; caseNumber: string; subjectName: string; riskLevel: string; filedAt: string; }
 
@@ -43,13 +62,6 @@ export default function VawcAiRiskPage() {
     resolved: t.total > 0 ? Math.round(((t.total - t.highRisk) / t.total) * 100) : 0,
   })) ?? [];
 
-  const insights = [
-    { icon: Psychology, title: 'Risk Score Engine', desc: 'Rule-based scoring using case type, frequency, and recurrence patterns across streets/barangays.', color: ACCENT },
-    { icon: Warning, title: 'High-Risk Threshold', desc: `Currently ${riskRatio.toFixed(1)}% of VAWC cases are classified high/critical risk.`, color: riskRatio > 20 ? '#ef4444' : '#f59e0b' },
-    { icon: TrendingUp, title: 'Trend Analysis', desc: `Monthly trend data from the last 6 months. ${trends?.length ? `Peak: ${Math.max(...(trends.map(t => t.highRisk)))} high-risk cases in a single month.` : 'Insufficient data.'}`, color: '#3b82f6' },
-    { icon: CheckCircle, title: 'AI Upgrade Path', desc: 'Recommend: Gemini 2.0 Flash for NLP narrative analysis, or fine-tuned classifier on anonymised VAWC case text.', color: '#22c55e' },
-  ];
-
   return (
     <Box sx={{ maxWidth: 1200 }}>
       <Box sx={{ mb: 3 }}>
@@ -59,6 +71,36 @@ export default function VawcAiRiskPage() {
         </Box>
         <Typography sx={{ fontSize: '0.82rem', color: '#64748b' }}>Automated risk scoring and pattern analysis for VAWC case escalation</Typography>
       </Box>
+
+      {/* ── Risk Summary Cards ── */}
+      <Grid container spacing={2} sx={{ mb: 3 }}>
+        {[
+          { label: 'Critical', value: stats?.summary?.critical, color: '#ef4444', icon: ReportProblem },
+          { label: 'High Risk', value: stats?.summary?.high, color: '#f97316', icon: Warning },
+          { label: 'Medium Risk', value: stats?.summary?.medium, color: '#f59e0b', icon: TrendingUp },
+          { label: 'Low Risk', value: stats?.summary?.low, color: '#22c55e', icon: CheckCircle },
+        ].map((s, i) => (
+          <Grid key={s.label} size={{ xs: 6, md: 3 }}>
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}>
+              <Card sx={{ borderLeft: `3px solid ${s.color}`, height: '100%' }}>
+                <CardContent sx={{ p: 2 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                    <s.icon sx={{ fontSize: 15, color: s.color }} />
+                    <Typography sx={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 600 }}>{s.label}</Typography>
+                  </Box>
+                  {stats ? (
+                    <Typography sx={{ fontSize: '1.5rem', fontWeight: 800, color: s.color, lineHeight: 1.1 }}>
+                      {s.value ?? 0}
+                    </Typography>
+                  ) : (
+                    <Skeleton variant="text" width={48} height={34} />
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
+          </Grid>
+        ))}
+      </Grid>
 
       {/* Risk meter */}
       <Grid container spacing={2.5} sx={{ mb: 3 }}>
@@ -133,28 +175,129 @@ export default function VawcAiRiskPage() {
         </Grid>
       </Grid>
 
-      {/* Insight cards */}
-      <Grid container spacing={2} sx={{ mb: 3 }}>
-        {insights.map((item, i) => (
-          <Grid key={item.title} size={{ xs: 12, sm: 6 }}>
-            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}>
-              <Card sx={{ '&:hover': { boxShadow: `0 4px 20px ${item.color}18` }, transition: 'box-shadow 0.2s', height: '100%' }}>
-                <CardContent sx={{ p: 2.25 }}>
-                  <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-start' }}>
-                    <Box sx={{ width: 36, height: 36, borderRadius: 2, bgcolor: `${item.color}14`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <item.icon sx={{ fontSize: 18, color: item.color }} />
+      {/* ── Street Risk Hotspots ── */}
+      <Card sx={{ mb: 2.5 }}>
+        <CardContent sx={{ p: 2.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.4 }}>
+            <LocationOn sx={{ color: '#ef4444', fontSize: 18 }} />
+            <Typography sx={{ fontWeight: 700, fontSize: '0.92rem', color: '#0c1e46' }}>Street Risk Hotspots</Typography>
+          </Box>
+          <Typography sx={{ fontSize: '0.73rem', color: 'text.secondary', mb: 1.75 }}>
+            Top streets by average VAWC risk score (color = risk level)
+          </Typography>
+          <Box sx={{ height: stats?.byStreet?.length ? Math.max(160, (stats.byStreet.length * 32) + 40) : 160 }}>
+            {!stats
+              ? <Skeleton variant="rectangular" height={160} sx={{ borderRadius: 2 }} />
+              : (stats.byStreet?.length ?? 0) > 0
+              ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={stats.byStreet} layout="vertical" barSize={18} margin={{ top: 0, right: 40, left: 8, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                    <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11, fill: '#94a3b8' }} tickLine={false} axisLine={false} />
+                    <YAxis dataKey="barangay" type="category" tick={{ fontSize: 11, fill: '#64748b' }} tickLine={false} axisLine={false} width={95} />
+                    <Tooltip
+                      formatter={(v: unknown, name: unknown) => [
+                        `${String(v)}${name === 'avgScore' ? '/100' : ' cases'}`,
+                        name === 'avgScore' ? 'Avg Risk Score' : 'High-Risk Cases',
+                      ]}
+                      contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.1)', fontSize: '0.8rem' }}
+                    />
+                    <Bar dataKey="avgScore" name="avgScore" radius={[0, 4, 4, 0]} label={{ position: 'right', fontSize: 11, fill: '#64748b' }}>
+                      {(stats.byStreet ?? []).map((d, i) => (
+                        <Cell key={i} fill={scoreColor(d.avgScore)} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )
+              : (
+                <Box sx={{ height: 160, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 1 }}>
+                  <LocationOn sx={{ fontSize: 36, color: '#e2e8f0' }} />
+                  <Typography sx={{ fontSize: '0.8rem', color: '#94a3b8' }}>No street data yet</Typography>
+                </Box>
+              )
+            }
+          </Box>
+        </CardContent>
+      </Card>
+
+      {/* ── Street Risk Heatmap ── */}
+      <Card sx={{ mb: 2.5 }}>
+        <CardContent sx={{ p: 2.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.4, flexWrap: 'wrap' }}>
+            <Box sx={{
+              width: 26, height: 26, borderRadius: 1.5,
+              background: 'linear-gradient(135deg, #22c55e 0%, #f97316 50%, #ef4444 100%)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}>
+              <LocationOn sx={{ fontSize: 14, color: 'white' }} />
+            </Box>
+            <Typography sx={{ fontWeight: 700, fontSize: '0.92rem', color: '#0c1e46' }}>
+              Street Risk Heatmap
+            </Typography>
+            <Chip label="Live Map" size="small"
+              sx={{ bgcolor: '#dcfce7', color: '#15803d', fontWeight: 700, fontSize: '0.65rem', height: 20 }} />
+            <Chip label="Bocaue, Bulacan" size="small"
+              icon={<LocationOn sx={{ fontSize: '11px !important', color: '#64748b !important' }} />}
+              sx={{ bgcolor: '#f1f5f9', color: '#64748b', fontSize: '0.65rem', height: 20 }} />
+          </Box>
+          <Typography sx={{ fontSize: '0.73rem', color: 'text.secondary', mb: 1.75 }}>
+            Street-level risk network plotted over the Biñan 2nd area map — heat intensity shows incident concentration per intersection and landmark
+          </Typography>
+          <RiskHeatMap
+            title="Biñan 2nd, Bocaue — VAWC Street Risk Heatmap"
+            contextLabel="VAWC geographic view"
+            accent={ACCENT}
+          />
+        </CardContent>
+      </Card>
+
+      {/* ── Priority Areas ── */}
+      {(stats?.areaInterventions?.length ?? 0) > 0 && (
+        <Card sx={{ mb: 2.5 }}>
+          <CardContent sx={{ p: 2.5 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.4 }}>
+              <ReportProblem sx={{ color: ACCENT, fontSize: 18 }} />
+              <Typography sx={{ fontWeight: 700, fontSize: '0.92rem', color: '#0c1e46' }}>Priority Areas</Typography>
+            </Box>
+            <Typography sx={{ fontSize: '0.73rem', color: 'text.secondary', mb: 1.75 }}>
+              Streets ranked by VAWC risk, with the case types driving each score
+            </Typography>
+            <Grid container spacing={1.5}>
+              {(stats?.areaInterventions ?? []).slice(0, 6).map((a, i) => (
+                <Grid key={a.barangay} size={{ xs: 12, sm: 6 }}>
+                  <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
+                    <Box sx={{
+                      p: 1.75, borderRadius: 2, height: '100%',
+                      border: `1px solid ${scoreColor(a.avgScore)}28`,
+                      bgcolor: `${scoreColor(a.avgScore)}06`,
+                    }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.75, flexWrap: 'wrap' }}>
+                        <Typography sx={{ fontWeight: 700, fontSize: '0.82rem', color: '#0c1e46', flex: 1, minWidth: 0 }}>
+                          {a.barangay}
+                        </Typography>
+                        <Chip label={`${a.avgScore}/100`} size="small"
+                          sx={{ bgcolor: `${scoreColor(a.avgScore)}18`, color: scoreColor(a.avgScore), fontWeight: 700, fontSize: '0.62rem', height: 19 }} />
+                      </Box>
+                      <Box sx={{ display: 'flex', gap: 0.6, flexWrap: 'wrap', mb: 0.75 }}>
+                        <Chip label={`${a.total} case${a.total !== 1 ? 's' : ''}`} size="small"
+                          sx={{ bgcolor: '#f1f5f9', color: '#64748b', fontSize: '0.6rem', height: 18 }} />
+                        {a.highRisk > 0 && (
+                          <Chip label={`${a.highRisk} high-risk`} size="small"
+                            sx={{ bgcolor: '#fef2f2', color: '#ef4444', fontWeight: 700, fontSize: '0.6rem', height: 18 }} />
+                        )}
+                      </Box>
+                      <Typography sx={{ fontSize: '0.7rem', color: '#64748b', lineHeight: 1.5 }}>
+                        {a.dominantCaseTypes.length > 0 ? a.dominantCaseTypes.join(' · ') : 'No dominant case type'}
+                      </Typography>
                     </Box>
-                    <Box>
-                      <Typography sx={{ fontWeight: 700, fontSize: '0.85rem', color: '#0c1e46', mb: 0.4 }}>{item.title}</Typography>
-                      <Typography sx={{ fontSize: '0.78rem', color: '#64748b', lineHeight: 1.55 }}>{item.desc}</Typography>
-                    </Box>
-                  </Box>
-                </CardContent>
-              </Card>
-            </motion.div>
-          </Grid>
-        ))}
-      </Grid>
+                  </motion.div>
+                </Grid>
+              ))}
+            </Grid>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Urgent cases quick list */}
       {(urgentData?.cases?.length ?? 0) > 0 && (
