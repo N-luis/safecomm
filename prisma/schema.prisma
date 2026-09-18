@@ -1,0 +1,149 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id               String     @id @default(cuid())
+  email            String     @unique
+  name             String
+  password         String
+  role             String     @default("officer")
+  barangay         String?
+  phone            String?
+  avatar           String?
+  active           Boolean    @default(true)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  assignedCases    Case[]         @relation("AssignedOfficer")
+  createdReports   Report[]
+  activities       Activity[]
+  sentMessages     Message[]      @relation("SentMessages")
+  receivedMessages Message[]      @relation("ReceivedMessages")
+  caseFollowUps    CaseFollowUp[]
+}
+
+model Case {
+  id           String         @id @default(cuid())
+  caseNumber   String         @unique
+  residentName String
+  caseType     String
+  status       String         @default("Open")
+  riskLevel    String         @default("Low")
+  barangay     String
+  description  String
+  notes        String?
+  assignedToId String?
+  assignedTo   User?          @relation("AssignedOfficer", fields: [assignedToId], references: [id])
+  residentId   String?
+  resident     Resident?      @relation(fields: [residentId], references: [id])
+  filedAt      DateTime       @default(now())
+  resolvedAt   DateTime?
+  updatedAt    DateTime       @updatedAt
+  activities   Activity[]
+  followUps    CaseFollowUp[]
+}
+
+model Report {
+  id             String   @id @default(cuid())
+  reportNumber   String   @unique
+  title          String
+  category       String
+  status         String   @default("Pending")
+  priority       String   @default("Medium")
+  content        String
+  submittedById  String?
+  submittedBy    User?    @relation(fields: [submittedById], references: [id])
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model Resident {
+  id             String    @id @default(cuid())
+  residentNumber String    @unique
+  firstName      String
+  lastName       String
+  age            Int
+  gender         String
+  barangay       String
+  address        String
+  contactNumber  String?
+  email          String?
+  password       String?
+  idDocument     String?
+  status         String    @default("Active")
+  riskLevel      String    @default("Low")
+  notes          String?
+  registeredAt   DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  cases          Case[]
+}
+
+model Activity {
+  id         String   @id @default(cuid())
+  type       String
+  message    String
+  entityId   String?
+  entityType String?
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+  caseId     String?
+  case       Case?    @relation(fields: [caseId], references: [id])
+  color      String   @default("#3b82f6")
+  createdAt  DateTime @default(now())
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  title     String
+  message   String
+  type      String   @default("info")
+  read      Boolean  @default(false)
+  userId    String?
+  createdAt DateTime @default(now())
+}
+
+model Alert {
+  id        String    @id @default(cuid())
+  title     String
+  message   String
+  level     String    @default("warning")
+  barangay  String?
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  expiresAt DateTime?
+}
+
+model CaseFollowUp {
+  id         String   @id @default(cuid())
+  caseId     String
+  case       Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+  type       String   @default("note")
+  content    String
+  statusFrom String?
+  statusTo   String?
+  outcome    String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Message {
+  id          String    @id @default(cuid())
+  subject     String
+  body        String
+  senderId    String
+  sender      User      @relation("SentMessages", fields: [senderId], references: [id])
+  recipientId String
+  recipient   User      @relation("ReceivedMessages", fields: [recipientId], references: [id])
+  read        Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  parentId    String?
+  parent      Message?  @relation("Replies", fields: [parentId], references: [id])
+  replies     Message[] @relation("Replies")
+}
